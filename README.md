@@ -44,6 +44,12 @@ uv run bcdl download [options]
 | `--output DIR` | Output directory | `./downloads` |
 | `--dry-run` | List matching items without downloading | — |
 
+Both date bounds are inclusive and interpreted in your **local** timezone, so
+`--since 2026-08-07 --until 2026-08-07` covers that whole day as you experienced
+it. Bandcamp reports purchase times in GMT, which means an evening purchase is
+stamped with the following calendar day — the listing in `--dry-run` shows those
+raw GMT timestamps, so they can look a day ahead of the range you asked for.
+
 ### Supported formats
 
 `mp3-v0`, `mp3-320`, `flac`, `wav`, `aiff-lossless`, `aac-hi`, `alac`, `vorbis`
@@ -60,6 +66,14 @@ Download everything since February 2026 as WAV:
 
 ```
 uv run bcdl download --format wav --since 2026-02-01
+```
+
+## Development
+
+Run the tests:
+
+```
+uv run --group dev pytest
 ```
 
 Re-running the same command skips already-downloaded items. Album ZIPs are automatically extracted.

@@ -8,6 +8,24 @@ import requests
 BASE_URL = "https://bandcamp.com"
 
 
+class BandcampError(Exception):
+    """An error reported by the Bandcamp API itself."""
+
+
+def _check_error(data: dict) -> dict:
+    """Raise if the payload carries an API-level error.
+
+    Bandcamp answers a rejected cookie with HTTP 200 and an error body, so
+    raise_for_status() sees nothing wrong.
+    """
+    if isinstance(data, dict) and data.get("error"):
+        message = data.get("error_message") or "unknown error"
+        if "logged in" in message:
+            message += " — your identity cookie is invalid or expired, re-run 'bcdl configure'"
+        raise BandcampError(message)
+    return data
+
+
 def make_session(identity: str) -> requests.Session:
     session = requests.Session()
     session.cookies.set("identity", identity, domain=".bandcamp.com")
@@ -18,7 +36,9 @@ def make_session(identity: str) -> requests.Session:
 def get_fan_id(session: requests.Session) -> int:
     resp = session.get(f"{BASE_URL}/api/fan/2/collection_summary")
     resp.raise_for_status()
-    data = resp.json()
+    data = _check_error(resp.json())
+    if "fan_id" not in data:
+        raise BandcampError("unexpected response from Bandcamp: no fan_id")
     return data["fan_id"]
 
 
@@ -49,7 +69,7 @@ def get_collection_items(
             json=payload,
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = _check_error(resp.json())
 
         batch = data.get("items", [])
         if not batch:

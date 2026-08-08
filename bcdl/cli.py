@@ -1,6 +1,6 @@
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -61,22 +61,7 @@ def cmd_download(args: argparse.Namespace) -> None:
     items, redownload_urls = api.get_collection_items(session, fan_id)
     console.print(f"Found {len(items)} items in collection.")
 
-    # Filter by date
-    since = parse_date(args.since) if args.since else None
-    until = parse_date(args.until) if args.until else None
-
-    filtered = []
-    for item in items:
-        if not item.get("download_available"):
-            continue
-        purchase_date = parse_item_date(item)
-        if purchase_date is None:
-            continue
-        if since and purchase_date < since:
-            continue
-        if until and purchase_date > until:
-            continue
-        filtered.append(item)
+    filtered = filter_items(items, since=args.since, until=args.until)
 
     console.print(f"{len(filtered)} items match the date filter.")
 
@@ -125,8 +110,48 @@ def cmd_download(args: argparse.Namespace) -> None:
                 console.print(f"[red]  Download failed: {e}[/red]")
 
 
-def parse_date(s: str) -> datetime:
-    return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+def day_start(s: str) -> datetime:
+    """Midnight local time on the given date.
+
+    Calling astimezone() on a naive datetime reads it as local time and picks
+    the UTC offset in effect on that date, so DST is handled per-date rather
+    than using today's offset.
+    """
+    return datetime.strptime(s, "%Y-%m-%d").astimezone()
+
+
+def day_after(s: str) -> datetime:
+    """Midnight local time on the day following the given date."""
+    return (datetime.strptime(s, "%Y-%m-%d") + timedelta(days=1)).astimezone()
+
+
+def filter_items(
+    items: list[dict], since: str | None = None, until: str | None = None
+) -> list[dict]:
+    """Select downloadable items purchased within the local-time date range.
+
+    Both bounds are inclusive whole local days. Bandcamp reports purchase
+    times in GMT, so an evening purchase is stamped with the next calendar
+    day; comparing against local day boundaries keeps --since/--until
+    meaning the days the user actually saw on the clock.
+    """
+    start = day_start(since) if since else None
+    end = day_after(until) if until else None
+
+    matched = []
+    for item in items:
+        if not item.get("download_available"):
+            continue
+        purchased = parse_item_date(item)
+        if purchased is None:
+            continue
+        if start and purchased < start:
+            continue
+        if end and purchased >= end:
+            continue
+        matched.append(item)
+
+    return matched
 
 
 def parse_item_date(item: dict) -> datetime | None:
